@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IceBreaking Game</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel (JSX 변환용) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out backwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Components ---
+
+        const Leaderboard = ({ trainees, votes, manualScores }) => {
+            const sortedTrainees = useMemo(() => {
+                return trainees.map(trainee => {
+                    const quizScore = votes
+                        .filter(v => v.voterId === trainee.id && v.isCorrect)
+                        .reduce((sum, v) => sum + (v.points || 1), 0);
+
+                    const individualBonus = manualScores
+                        .filter(s => s.targetType === 'individual' && s.targetId === trainee.id.toString())
+                        .reduce((sum, s) => sum + s.score, 0);
+                    const teamBonus = manualScores
+                        .filter(s => s.targetType === 'team' && s.targetId === trainee.team)
+                        .reduce((sum, s) => sum + s.score, 0);
+
+                    return {
+                        ...trainee,
+                        score: quizScore + individualBonus + teamBonus
+                    };
+                }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+            }, [trainees, votes, manualScores]);
+
+            return (
+                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl p-4 w-full h-full border-2 border-indigo-100 flex flex-col">
+                    <h2 className="text-2xl font-bold text-center mb-4 text-indigo-800 flex items-center justify-center gap-2 shrink-0">
+                        <i className="fa-solid fa-trophy text-yellow-500"></i> 실시간 랭킹
+                    </h2>
+                    <div className="overflow-y-auto flex-1 rounded-xl border border-gray-100" style={{maxHeight: '400px'}}>
+                        <table className="w-full text-left border-collapse relative">
+                            <thead className="bg-indigo-50 text-indigo-900 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th className="p-3 text-center w-12 text-sm">#</th>
+                                    <th className="p-3 text-sm">이름 (조)</th>
+                                    <th className="p-3 text-right text-sm">점수</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sortedTrainees.map((trainee, index) => {
+                                    let rankIcon = null;
+                                    if (index === 0) rankIcon = <i className="fa-solid fa-medal text-yellow-400 text-lg"></i>;
+                                    else if (index === 1) rankIcon = <i className="fa-solid fa-medal text-gray-400 text-lg"></i>;
+                                    else if (index === 2) rankIcon = <i className="fa-solid fa-medal text-amber-700 text-lg"></i>;
+
+                                    return (
+                                        <tr key={trainee.id} className={`border-b border-gray-50 hover:bg-indigo-50/50 transition-colors ${index < 3 ? 'font-bold bg-indigo-50/20' : ''}`}>
+                                            <td className="p-3 text-center">
+                                                {rankIcon || <span className="text-gray-500 text-sm">{index + 1}</span>}
+                                            </td>
+                                            <td className="p-3 flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-gray-200 overflow-hidden shrink-0 border border-gray-100 hidden sm:block">
+                                                    {trainee.photoUrl ? (
+                                                        <img src={trainee.photoUrl} alt={trainee.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-indigo-100 text-indigo-500 text-[10px]">
+                                                            <i className="fa-solid fa-user"></i>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                                                    <span className="text-gray-900 text-sm">{trainee.name}</span>
+                                                    <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full w-fit">{trainee.team}</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-right text-indigo-600 font-mono font-bold">
+                                                {trainee.score}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(false);
+
+            if (!isOpen) return null;
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (password === '12345') {
+                    onLogin();
+                    setPassword('');
+                    setError(false);
+                } else {
+                    setError(true);
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 transform transition-all scale-100">
+                        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i className="fa-solid fa-lock text-indigo-600"></i> 관리자 접속
+                        </h3>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">비밀번호</label>
+                                <input
+                                    type="password"
+                                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition ${error ? 'border-red-500 focus:ring-red-200' : 'border-gray-300 focus:ring-indigo-200'}`}
+                                    placeholder="비밀번호를 입력하세요"
+                                    value={password}
+                                    onChange={(e) => {
+                                        setPassword(e.target.value);
+                                        setError(false);
+                                    }}
+                                    autoFocus
+                                />
+                                {error && <p className="text-red-500 text-xs mt-1 font-bold"><i className="fa-solid fa-circle-exclamation mr-1"></i>비밀번호가 올바르지 않습니다.</p>}
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={onClose}
+                                    className="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-bold transition"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold transition shadow-md"
+                                >
+                                    접속
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const TraineeForm = ({ trainees, onSubmit, existingData, onCancel, onExit }) => {
+            const [formData, setFormData] = useState({
+                name: '', team: '', photoUrl: '', youtubeUrl: '', desc1: '', desc2: '', desc3: ''
+            });
+            const [isUploading, setIsUploading] = useState(false);
+
+            useEffect(() => {
+                if (existingData) {
+                    setFormData({ ...existingData });
+                }
+            }, [existingData]);
+
+            const handleChange = (e) => {
+                setFormData({ ...formData, [e.target.name]: e.target.value });
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    if (file.size > 10 * 1024 * 1024) {
+                        alert('파일 크기는 10MB 이하여야 합니다.');
+                        return;
+                    }
+                    setIsUploading(true);
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        if (typeof event.target?.result === 'string') {
+                            setFormData(prev => ({ ...prev, photoUrl: event.target?.result }));
+                            setIsUploading(false);
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const getYoutubeId = (url) => {
+                if (!url) return null;
+                const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\??v?=?))([^#&?]*).*/;
+                const match = url.match(regExp);
+                return (match && match[7].length === 11) ? match[7] : null;
+            };
+
+            const previewId = getYoutubeId(formData.youtubeUrl);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!formData.name || !formData.team) {
+                    alert("이름과 조를 입력해주세요.");
+                    return;
+                }
+                if (!existingData) {
+                    const found = trainees.find(t => t.name === formData.name && t.team === formData.team);
+                    if (found) {
+                        if (window.confirm(`${found.team} ${found.name}님의 기존 정보가 있습니다.\n정보를 불러오시겠습니까?`)) {
+                            onSubmit(formData, found.id);
+                            return;
+                        } else {
+                            alert("다른 이름을 사용하거나 관리자에게 문의하세요.");
+                            return;
+                        }
+                    }
+                }
+                onSubmit(formData);
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center p-4 relative">
+                    {onExit && (
+                        <button onClick={onExit} className="absolute top-4 left-4 bg-white/80 p-3 rounded-full shadow-md text-indigo-600 hover:bg-white transition z-10">
+                            <i className="fa-solid fa-house text-xl"></i>
+                        </button>
+                    )}
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto animate-fade-in-up">
+                        <h2 className="text-2xl font-bold text-center text-indigo-800 mb-6">{existingData ? '내 정보 수정' : '저를 소개합니다'}</h2>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
+                                <input type="text" name="name" required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.name} onChange={handleChange} placeholder="본명을 입력하세요" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">조 (Team)</label>
+                                <select name="team" required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.team} onChange={handleChange}>
+                                    <option value="">조를 선택하세요</option>
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(num => <option key={num} value={`${num}조`}>{num}조</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">나를 설명하는 사진</label>
+                                <div className="flex items-center gap-2">
+                                    <label className="cursor-pointer bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-4 py-2 rounded-lg transition text-sm font-medium flex-1 text-center">
+                                        <i className="fa-solid fa-camera mr-2"></i>사진 업로드
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                    </label>
+                                    {formData.photoUrl && (
+                                        <button type="button" onClick={() => setFormData({ ...formData, photoUrl: '' })} className="bg-red-50 text-red-500 p-2 rounded-lg hover:bg-red-100">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    )}
+                                </div>
+                                {isUploading && <p className="text-xs text-indigo-500 mt-1 animate-pulse">이미지 처리 중...</p>}
+                                {formData.photoUrl && (
+                                    <div className="mt-2 relative w-full h-40 bg-gray-100 rounded-lg overflow-hidden border">
+                                        <img src={formData.photoUrl} alt="Preview" className="w-full h-full object-contain" />
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">좋아하는 노래 (YouTube URL)</label>
+                                <input type="text" name="youtubeUrl" className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" value={formData.youtubeUrl} onChange={handleChange} placeholder="https://youtu.be/..." />
+                                {previewId && (
+                                    <div className="mt-2 rounded-lg overflow-hidden relative pb-[56.25%] h-0 bg-black">
+                                        <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${previewId}`} frameBorder="0" allowFullScreen></iframe>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-3 bg-gray-50 p-4 rounded-xl">
+                                <label className="block text-sm font-medium text-gray-700">나를 설명하는 특징 3가지</label>
+                                <input type="text" name="desc1" required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" value={formData.desc1} onChange={handleChange} placeholder="예) 나는 딸 쌍둥이를 키우고 있다" />
+                                <input type="text" name="desc2" required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" value={formData.desc2} onChange={handleChange} placeholder="예) 나는 예전에 가수였다" />
+                                <input type="text" name="desc3" required className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" value={formData.desc3} onChange={handleChange} placeholder="예) 나는 쉬는 시간에 항상 초코바를 먹는다" />
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                                {onCancel && (
+                                    <button type="button" onClick={onCancel} className="flex-1 py-3 bg-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-300 transition">취소</button>
+                                )}
+                                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">{existingData ? '수정 완료' : '등록하기'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const GameView = ({ myId, trainees, currentTraineeIndex, gameState, votes, manualScores, currentTeamFilter, onVote, onEditProfile, onExit }) => {
+            const currentTrainee = trainees[currentTraineeIndex];
+            const teams = Array.from(new Set(trainees.map(t => t.team))).sort();
+            const displayedTeams = currentTeamFilter ? teams.filter(t => t === currentTeamFilter) : teams;
+            
+            const hasVoted = votes.some(v => v.voterId === myId && trainees.findIndex(t => t.id === v.targetId) === currentTraineeIndex);
+            
+            // Calc correct rate for display
+            const correctVotes = votes.filter(v => trainees.findIndex(t => t.id === v.targetId) === currentTraineeIndex && v.isCorrect).length;
+            const totalVotes = votes.filter(v => trainees.findIndex(t => t.id === v.targetId) === currentTraineeIndex).length;
+            const correctRate = totalVotes > 0 ? Math.round((correctVotes / totalVotes) * 100) : 0;
+
+            const getYoutubeId = (url) => {
+                if (!url) return null;
+                const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\??v?=?))([^#&?]*).*/;
+                const match = url.match(regExp);
+                return (match && match[7].length === 11) ? match[7] : null;
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-100 flex flex-col">
+                    <header className="bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-20 h-16 shrink-0">
+                        <div className="flex items-center gap-3">
+                            {onExit && (
+                                <button onClick={onExit} className="text-gray-500 hover:text-indigo-600 transition p-2 rounded-full hover:bg-gray-100">
+                                    <i className="fa-solid fa-house"></i>
+                                </button>
+                            )}
+                            <h1 className="font-bold text-indigo-800 text-lg">IceBreaking</h1>
+                        </div>
+                        <button onClick={onEditProfile} className="flex items-center gap-2 bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 transition px-4 py-2 rounded-full text-sm font-bold shadow-sm">
+                            <i className="fa-solid fa-user-pen"></i> 내 정보 수정
+                        </button>
+                    </header>
+                    <main className="flex-1 p-4 flex flex-col md:flex-row gap-4 max-w-7xl mx-auto w-full h-[calc(100vh-64px)]">
+                        <div className="w-full md:w-1/2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6 overflow-y-auto flex flex-col">
+                            {gameState === 'waiting' && (
+                                <div className="flex-1 flex flex-col items-center justify-center text-center">
+                                    <div className="text-6xl mb-4 animate-bounce">⏳</div>
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">대기 중입니다</h2>
+                                    <p className="text-gray-500">관리자가 게임을 시작할 때까지 기다려주세요.</p>
+                                </div>
+                            )}
+                            {(gameState !== 'waiting' && currentTrainee) && (
+                                <div className="flex-1 flex flex-col">
+                                    <div className="mb-4 flex justify-between items-end border-b pb-4">
+                                        <span className="text-sm font-bold text-indigo-500 uppercase tracking-widest">Question {currentTraineeIndex + 1}</span>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-xs text-gray-400">이번 문제 점수</span>
+                                            <span className="text-xl font-black text-indigo-600">
+                                                {gameState === 'photo' && '10점'}
+                                                {gameState === 'music' && '5점'}
+                                                {gameState === 'desc' && '2점'}
+                                                {gameState === 'reveal' && '-'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">
+                                        {gameState === 'photo' && '사진을 보고 누구인지 맞춰보세요!'}
+                                        {gameState === 'music' && '이 음악을 좋아하는 사람은?'}
+                                        {gameState === 'desc' && '이 특징의 주인공은?'}
+                                        {gameState === 'reveal' && '정답 공개!'}
+                                    </h2>
+                                    <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-xl overflow-hidden mb-6 min-h-[300px] border border-gray-100 relative">
+                                        {gameState === 'reveal' ? (
+                                            <div className="text-center animate-fade-in w-full">
+                                                <div className="w-48 h-48 rounded-full overflow-hidden mx-auto mb-6 border-4 border-white shadow-lg bg-gray-200">
+                                                    <img src={currentTrainee.photoUrl} className="w-full h-full object-cover" />
+                                                </div>
+                                                <div className="text-4xl font-black text-indigo-600 mb-2">{currentTrainee.name}</div>
+                                                <p className="text-xl font-bold text-gray-500 mb-4">{currentTrainee.team}</p>
+                                                <div className="bg-indigo-50 text-indigo-800 px-4 py-2 rounded-lg inline-block text-sm font-bold">정답률: {correctRate}%</div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {gameState === 'photo' && <img src={currentTrainee.photoUrl} className="w-full h-full object-contain" alt="Hint" />}
+                                                {gameState === 'music' && currentTrainee.youtubeUrl && (
+                                                    <div className="w-full h-full relative group">
+                                                        <iframe className="w-full h-full" src={`https://www.youtube-nocookie.com/embed/${getYoutubeId(currentTrainee.youtubeUrl)}?autoplay=1&mute=0&rel=0&modestbranding=1&playsinline=1&origin=${window.location.origin}`} frameBorder="0" allowFullScreen></iframe>
+                                                    </div>
+                                                )}
+                                                {gameState === 'desc' && (
+                                                    <div className="p-8 w-full space-y-4">
+                                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-100 text-lg font-medium text-gray-700 animate-fade-in-up">1. {currentTrainee.desc1}</div>
+                                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-100 text-lg font-medium text-gray-700 animate-fade-in-up" style={{animationDelay: '0.2s'}}>2. {currentTrainee.desc2}</div>
+                                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-indigo-100 text-lg font-medium text-gray-700 animate-fade-in-up" style={{animationDelay: '0.4s'}}>3. {currentTrainee.desc3}</div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                    {hasVoted && gameState !== 'reveal' && (
+                                        <div className="bg-green-50 text-green-700 p-4 rounded-xl font-bold border border-green-200 text-center animate-pulse"><i className="fa-solid fa-check-circle mr-2"></i>제출 완료! 결과를 기다리세요.</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="w-full md:w-1/2 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 overflow-y-auto flex flex-col">
+                            <h3 className="font-bold text-gray-800 mb-4 pb-2 border-b flex items-center gap-2 sticky top-0 bg-white z-10">
+                                <i className="fa-solid fa-list-ul text-indigo-500"></i> 답안지 (교육생 명단)
+                            </h3>
+                            {gameState === 'reveal' ? (
+                                <Leaderboard trainees={trainees} votes={votes} manualScores={manualScores} />
+                            ) : (
+                                <div className="space-y-6">
+                                    {displayedTeams.map(team => (
+                                        <div key={team}>
+                                            <h4 className="text-sm font-bold text-indigo-500 mb-2 bg-indigo-50 px-2 py-1 rounded w-fit">{team}</h4>
+                                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                                {trainees.filter(t => t.team === team).map(t => (
+                                                    <button key={t.id} disabled={hasVoted || gameState === 'waiting'} onClick={() => { if(window.confirm(`${t.team} ${t.name}님이 확실한가요?`)) { onVote(myId, t.id); } }} className={`p-3 rounded-xl border transition text-left flex items-center gap-2 group ${hasVoted ? 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white border-gray-200 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 hover:shadow-md'}`}>
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs border ${hasVoted ? 'bg-gray-200 text-gray-400' : 'bg-gray-50 text-gray-500 group-hover:bg-white/20 group-hover:text-white group-hover:border-transparent'}`}><i className="fa-solid fa-user"></i></div>
+                                                        <span className="font-medium text-sm truncate">{t.name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const AdminDashboard = ({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, setGameState, setCurrentTraineeIndex, onAddScore, onCompleteTrainee, setCurrentTeamFilter, onExit }) => {
+            const currentTrainee = trainees[currentTraineeIndex];
+            const [showQr, setShowQr] = useState(false);
+            const [scoreMode, setScoreMode] = useState('none');
+            const [viewTab, setViewTab] = useState('quiz');
+            const [isPenaltyMode, setIsPenaltyMode] = useState(false);
+            const scoreOptions = Array.from({ length: 10 }, (_, i) => i + 1);
+            const teams = Array.from(new Set(trainees.map(t => t.team))).sort();
+
+            const getYoutubeId = (url) => {
+                if (!url) return null;
+                const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\??v?=?))([^#&?]*).*/;
+                const match = url.match(regExp);
+                return (match && match[7].length === 11) ? match[7] : null;
+            };
+
+            const nextStep = () => {
+                if (gameState === 'waiting') setGameState('photo');
+                else if (gameState === 'photo') setGameState('music');
+                else if (gameState === 'music') setGameState('desc');
+                else if (gameState === 'desc') setGameState('reveal');
+                else if (gameState === 'reveal') {
+                    if (currentTrainee) onCompleteTrainee(currentTrainee.id);
+                    setGameState('waiting');
+                }
+            };
+
+            const prevStep = () => {
+                if (gameState === 'photo') setGameState('waiting');
+            };
+
+            const startTeamRandomQuiz = (team) => {
+                const teamMembers = trainees.filter(t => t.team === team);
+                const availableMembers = teamMembers.filter(t => !completedTraineeIds.includes(t.id));
+                if (availableMembers.length === 0) {
+                    alert('이 조의 모든 인원이 이미 출제되었습니다!');
+                    return;
+                }
+                const randomMember = availableMembers[Math.floor(Math.random() * availableMembers.length)];
+                const originalIndex = trainees.findIndex(t => t.id === randomMember.id);
+                if (window.confirm(`${team}의 퀴즈를 시작하시겠습니까?\n(랜덤 추첨된 인원: 비공개)`)) {
+                    setCurrentTraineeIndex(originalIndex);
+                    setCurrentTeamFilter(team);
+                    setGameState('photo');
+                    setViewTab('quiz');
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+                    <header className="bg-indigo-600 text-white p-4 shadow-md flex justify-between items-center">
+                        <h1 className="text-xl font-bold flex items-center gap-2"><i className="fa-solid fa-user-tie"></i> 관리자 대시보드</h1>
+                        <div className="flex gap-2">
+                            <button onClick={onExit} className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition text-sm font-bold"><i className="fa-solid fa-house mr-2"></i>종료</button>
+                            <button onClick={() => setShowQr(!showQr)} className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition text-sm backdrop-blur-sm"><i className="fa-solid fa-qrcode mr-2"></i>QR 코드</button>
+                            <button onClick={() => setScoreMode(scoreMode === 'none' ? 'individual' : 'none')} className={`px-4 py-2 rounded-lg transition text-sm font-bold shadow-sm ${scoreMode !== 'none' ? 'bg-yellow-400 text-indigo-900' : 'bg-indigo-500 hover:bg-indigo-400'}`}><i className="fa-solid fa-star mr-2"></i>점수 관리</button>
+                        </div>
+                    </header>
+                    <div className="bg-white border-b flex justify-center gap-8 p-2">
+                        <button onClick={() => { setViewTab('quiz'); setCurrentTeamFilter(null); }} className={`px-6 py-2 rounded-full font-bold transition ${viewTab === 'quiz' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><i className="fa-solid fa-person-chalkboard mr-2"></i>전체 아이스브레이킹</button>
+                        <button onClick={() => setViewTab('team_score')} className={`px-6 py-2 rounded-full font-bold transition ${viewTab === 'team_score' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><i className="fa-solid fa-people-group mr-2"></i>조별 아이스브레이킹</button>
+                    </div>
+                    {showQr && (
+                        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowQr(false)}>
+                            <div className="bg-white p-8 rounded-2xl max-w-md w-full text-center animate-fade-in" onClick={e => e.stopPropagation()}>
+                                <h2 className="text-2xl font-bold mb-4 text-indigo-800">참가자 접속 QR</h2>
+                                <div className="bg-gray-100 p-4 rounded-xl mb-4 inline-block">
+                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(window.location.href.split('?')[0])}`} alt="QR Code" className="w-64 h-64 mix-blend-multiply"/>
+                                </div>
+                                <p className="text-gray-500 break-all">{window.location.href.split('?')[0]}</p>
+                                <button onClick={() => setShowQr(false)} className="mt-6 px-6 py-2 bg-gray-800 text-white rounded-full hover:bg-gray-700">닫기</button>
+                            </div>
+                        </div>
+                    )}
+                    {scoreMode !== 'none' && (
+                        <div className="bg-white border-b-4 border-yellow-400 p-6 shadow-lg animate-slide-down">
+                            <div className="max-w-6xl mx-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <div className="flex items-center gap-4">
+                                        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><i className="fa-solid fa-gift text-yellow-500"></i> 점수 관리</h2>
+                                        <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                                            <button onClick={() => setIsPenaltyMode(false)} className={`px-3 py-1.5 rounded-md text-sm font-bold transition ${!isPenaltyMode ? 'bg-indigo-500 text-white shadow' : 'text-gray-500'}`}>칭찬 (+)</button>
+                                            <button onClick={() => setIsPenaltyMode(true)} className={`px-3 py-1.5 rounded-md text-sm font-bold transition ${isPenaltyMode ? 'bg-red-500 text-white shadow' : 'text-gray-500'}`}>감점 (-)</button>
+                                        </div>
+                                    </div>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button onClick={() => setScoreMode('individual')} className={`px-4 py-2 rounded-md text-sm font-bold transition ${scoreMode === 'individual' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>개인별</button>
+                                        <button onClick={() => setScoreMode('team')} className={`px-4 py-2 rounded-md text-sm font-bold transition ${scoreMode === 'team' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>조별</button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-60 overflow-y-auto p-2">
+                                    {scoreMode === 'individual' ? trainees.map(t => (
+                                        <div key={t.id} className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex flex-col gap-2">
+                                            <div className="flex justify-between items-center"><span className="font-bold text-gray-800">{t.name}</span><span className="text-xs text-gray-500">({t.team})</span></div>
+                                            <div className="grid grid-cols-5 gap-1">
+                                                {scoreOptions.map(score => {
+                                                    const finalScore = isPenaltyMode ? -score : score;
+                                                    return <button key={score} onClick={() => { if(window.confirm(`${t.name}님에게 ${finalScore}점을 주시겠습니까?`)) onAddScore(t.id.toString(), 'individual', finalScore); }} className={`h-8 rounded font-bold text-xs transition-colors border ${isPenaltyMode ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border-red-100' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white border-indigo-100'}`}>{finalScore > 0 ? `+${finalScore}` : finalScore}</button>;
+                                                })}
+                                            </div>
+                                        </div>
+                                    )) : teams.map(team => (
+                                        <div key={team} className="bg-orange-50 p-3 rounded-xl border border-orange-200 flex flex-col gap-2">
+                                            <span className="font-bold text-gray-800">{team}</span>
+                                            <div className="grid grid-cols-5 gap-1">
+                                                {scoreOptions.map(score => {
+                                                    const finalScore = isPenaltyMode ? -score : score;
+                                                    return <button key={score} onClick={() => { if(window.confirm(`${team} 전체에게 ${finalScore}점을 주시겠습니까?`)) onAddScore(team, 'team', finalScore); }} className={`h-8 rounded font-bold text-xs transition-colors border ${isPenaltyMode ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border-red-100' : 'bg-orange-100 text-orange-600 hover:bg-orange-600 hover:text-white border-orange-200'}`}>{finalScore > 0 ? `+${finalScore}` : finalScore}</button>;
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <main className="flex-1 p-6 flex gap-6 overflow-hidden">
+                        {viewTab === 'quiz' ? (
+                            <>
+                                <div className="flex-1 flex flex-col gap-6 overflow-y-auto">
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                                        <div className="flex justify-between items-end mb-4">
+                                            <div>
+                                                <span className="text-sm font-bold text-indigo-500 tracking-wider uppercase mb-1 block">Now Playing</span>
+                                                <h2 className="text-3xl font-bold text-gray-800">{currentTrainee ? `문제 진행 중` : '대기 중...'} {currentTrainee && gameState === 'reveal' ? `: ${currentTrainee.name}` : ''}</h2>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="block text-sm text-gray-500">현재 단계</span>
+                                                <span className="text-xl font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">
+                                                    {gameState === 'waiting' && '대기'}
+                                                    {gameState === 'photo' && '사진 힌트 (10점)'}
+                                                    {gameState === 'music' && '음악 힌트 (5점)'}
+                                                    {gameState === 'desc' && '특징 힌트 (2점)'}
+                                                    {gameState === 'reveal' && '정답 공개'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="aspect-video bg-gray-100 rounded-xl mb-6 overflow-hidden relative flex items-center justify-center border border-gray-200">
+                                            {!currentTrainee ? (
+                                                <div className="text-center text-gray-400"><i className="fa-solid fa-list-ul text-4xl mb-2"></i><p>오른쪽 명단에서 퀴즈를 낼 교육생을 선택해주세요.</p></div>
+                                            ) : (
+                                                <>
+                                                    {gameState === 'photo' && <img src={currentTrainee.photoUrl} className="w-full h-full object-contain" alt="Hint" />}
+                                                    {gameState === 'music' && currentTrainee.youtubeUrl && (
+                                                        <div className="w-full h-full relative group">
+                                                            <iframe className="w-full h-full" src={`https://www.youtube-nocookie.com/embed/${getYoutubeId(currentTrainee.youtubeUrl)}?autoplay=1&mute=0&rel=0&modestbranding=1&playsinline=1&origin=${window.location.origin}`} frameBorder="0" allowFullScreen></iframe>
+                                                        </div>
+                                                    )}
+                                                    {gameState === 'desc' && (
+                                                        <div className="p-8 text-center space-y-4 w-full">
+                                                            <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 text-2xl font-bold text-gray-800">1. {currentTrainee.desc1}</div>
+                                                            <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 text-2xl font-bold text-gray-800">2. {currentTrainee.desc2}</div>
+                                                            <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 text-2xl font-bold text-gray-800">3. {currentTrainee.desc3}</div>
+                                                        </div>
+                                                    )}
+                                                    {(gameState === 'reveal' || gameState === 'waiting') && (
+                                                        <div className="text-center">
+                                                            <div className="w-48 h-48 rounded-full overflow-hidden mx-auto mb-6 border-4 border-white shadow-lg bg-gray-200"><img src={currentTrainee.photoUrl} className="w-full h-full object-cover" /></div>
+                                                            <h3 className="text-4xl font-black text-gray-800 mb-2">{currentTrainee.name}</h3>
+                                                            <p className="text-xl text-indigo-500 font-bold">{currentTrainee.team}</p>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <button onClick={prevStep} className="py-4 rounded-xl bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition" disabled={!currentTrainee}><i className="fa-solid fa-arrow-left mr-2"></i>이전 단계</button>
+                                            <button onClick={nextStep} className="py-4 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 transform active:scale-95" disabled={!currentTrainee}>{gameState === 'reveal' ? '종료 (완료 처리)' : '다음 힌트 보기'} <i className="fa-solid fa-arrow-right ml-2"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="w-96 shrink-0 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 overflow-y-auto flex flex-col">
+                                    <h3 className="font-bold text-gray-800 mb-4 pb-2 border-b flex items-center gap-2 sticky top-0 bg-white z-10"><i className="fa-solid fa-users-viewfinder text-indigo-500"></i> 교육생 선택 (퀴즈 출제)</h3>
+                                    <div className="space-y-4">
+                                        {teams.map(team => (
+                                            <div key={team}>
+                                                <h4 className="text-xs font-bold text-indigo-500 mb-2 uppercase tracking-wider">{team}</h4>
+                                                <div className="space-y-1">
+                                                    {trainees.filter(t => t.team === team).map(t => {
+                                                        const isCompleted = completedTraineeIds.includes(t.id);
+                                                        return (
+                                                            <button key={t.id} disabled={isCompleted} onClick={() => { if (window.confirm(`${t.name}님의 퀴즈를 시작하시겠습니까?\n(현재 진행 중인 퀴즈가 있다면 중단됩니다.)`)) { const idx = trainees.findIndex(tr => tr.id === t.id); setCurrentTraineeIndex(idx); setCurrentTeamFilter(null); setGameState('photo'); } }} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition flex justify-between items-center ${currentTrainee?.id === t.id ? 'bg-indigo-600 text-white shadow-md' : isCompleted ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gray-50 text-gray-700 hover:bg-indigo-50 hover:text-indigo-700'}`}>
+                                                                <span className={isCompleted ? 'line-through' : ''}>{t.name}</span>
+                                                                {isCompleted && <i className="fa-solid fa-check text-green-500"></i>}
+                                                                {currentTrainee?.id === t.id && !isCompleted && <i className="fa-solid fa-play text-xs animate-pulse"></i>}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="w-full flex gap-6">
+                                <div className="flex-1 bg-white rounded-2xl shadow-xl p-8 overflow-y-auto">
+                                    <h2 className="text-3xl font-bold text-indigo-800 mb-8 flex items-center justify-center gap-3"><i className="fa-solid fa-people-group text-4xl"></i> 조별 점수 현황</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {teams.map(team => {
+                                            const teamMembers = trainees.filter(t => t.team === team);
+                                            const teamTotalScore = teamMembers.reduce((sum, member) => {
+                                                const quiz = votes.filter(v => v.voterId === member.id && v.isCorrect).reduce((acc, v) => acc + (v.points || 1), 0);
+                                                const ind = manualScores.filter(s => s.targetType === 'individual' && s.targetId === member.id.toString()).reduce((acc, s) => acc + s.score, 0);
+                                                return sum + quiz + ind;
+                                            }, 0);
+                                            const teamManualScore = manualScores.filter(s => s.targetType === 'team' && s.targetId === team).reduce((acc, s) => acc + s.score, 0);
+                                            const total = teamTotalScore + teamManualScore;
+                                            return (
+                                                <div key={team} className="bg-indigo-50 rounded-2xl p-6 border-2 border-indigo-100 hover:shadow-lg transition">
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <h3 className="text-2xl font-bold text-indigo-900">{team}</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => startTeamRandomQuiz(team)} className="bg-indigo-600 text-white p-2 rounded-lg text-sm hover:bg-indigo-700 shadow-md transition" title="이 조에서 랜덤 출제"><i className="fa-solid fa-dice mr-1"></i> 랜덤 출제</button>
+                                                            <span className="text-3xl font-black text-yellow-500 bg-white px-4 py-2 rounded-xl shadow-sm">{total}점</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <p className="text-sm text-gray-500 font-bold mb-2">팀원 기여도</p>
+                                                        {teamMembers.map(member => {
+                                                            const mScore = votes.filter(v => v.voterId === member.id && v.isCorrect).reduce((a, v) => a + (v.points || 1), 0) + manualScores.filter(s => s.targetType === 'individual' && s.targetId === member.id.toString()).reduce((a, s) => a + s.score, 0);
+                                                            return <div key={member.id} className="flex justify-between text-sm bg-white p-2 rounded-lg"><span>{member.name}</span><span className="font-bold text-indigo-600">{mScore}</span></div>;
+                                                        })}
+                                                        <div className="flex justify-between text-sm bg-yellow-100 p-2 rounded-lg mt-2"><span className="font-bold text-yellow-800">조별 보너스</span><span className="font-bold text-yellow-800">+{teamManualScore}</span></div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="w-80 bg-white rounded-2xl shadow-xl p-6 border-2 border-yellow-100 flex flex-col">
+                                    <h3 className="text-xl font-bold text-gray-800 mb-4">🏆 조별 보너스 주기</h3>
+                                    <div className="flex-1 overflow-y-auto space-y-3">
+                                        {teams.map(team => (
+                                            <div key={team} className="bg-gray-50 p-4 rounded-xl flex flex-col gap-2">
+                                                <span className="font-bold text-gray-800">{team}</span>
+                                                <div className="grid grid-cols-5 gap-1">
+                                                    {scoreOptions.map(score => {
+                                                        const finalScore = isPenaltyMode ? -score : score;
+                                                        return <button key={score} onClick={() => { if(window.confirm(`${team} 전체에게 ${finalScore}점을 주시겠습니까?`)) onAddScore(team, 'team', finalScore); }} className={`h-8 rounded font-bold text-xs transition-colors border ${isPenaltyMode ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border-red-100' : 'bg-yellow-400 text-indigo-900 hover:bg-yellow-300 border-yellow-500'}`}>{finalScore > 0 ? `+${finalScore}` : finalScore}</button>;
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const LandingPage = ({ onSelectMode }) => {
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-600 to-purple-700 flex flex-col items-center justify-center p-4">
+                    <div className="text-center mb-12 animate-fade-in-up">
+                        <h1 className="text-5xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-lg">IceBreaking</h1>
+                        <p className="text-indigo-100 text-xl font-light">서로를 알아가는 가장 즐거운 방법</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+                        <button onClick={() => onSelectMode('trainee')} className="group relative bg-white hover:bg-indigo-50 rounded-3xl p-8 transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl flex flex-col items-center gap-4 border-b-8 border-indigo-200 active:border-b-0 active:translate-y-1">
+                            <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300"><i className="fa-solid fa-graduation-cap text-4xl text-indigo-600"></i></div>
+                            <div className="text-center"><h2 className="text-2xl font-bold text-gray-800 mb-2">교육생</h2><p className="text-gray-500">정보를 등록하고 퀴즈에 참여하세요</p></div>
+                        </button>
+                        <button onClick={() => onSelectMode('admin')} className="group relative bg-gray-900 hover:bg-gray-800 rounded-3xl p-8 transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl flex flex-col items-center gap-4 border-b-8 border-gray-950 active:border-b-0 active:translate-y-1">
+                            <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300"><i className="fa-solid fa-user-gear text-4xl text-yellow-400"></i></div>
+                            <div className="text-center"><h2 className="text-2xl font-bold text-white mb-2">관리자</h2><p className="text-gray-400">게임을 진행하고 점수를 관리하세요</p></div>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [trainees, setTrainees] = useState(() => JSON.parse(localStorage.getItem('trainees') || '[]'));
+            const [currentTraineeIndex, setCurrentTraineeIndex] = useState(() => parseInt(localStorage.getItem('currentTraineeIndex') || '0'));
+            const [gameState, setGameState] = useState(() => localStorage.getItem('gameState') || 'waiting');
+            const [votes, setVotes] = useState(() => JSON.parse(localStorage.getItem('votes') || '[]'));
+            const [manualScores, setManualScores] = useState(() => JSON.parse(localStorage.getItem('manualScores') || '[]'));
+            const [completedTraineeIds, setCompletedTraineeIds] = useState(() => JSON.parse(localStorage.getItem('completedTraineeIds') || '[]'));
+            const [isEditing, setIsEditing] = useState(false);
+            const [myId, setMyId] = useState(() => parseInt(localStorage.getItem('myId') || '0') || null);
+            const [viewMode, setViewMode] = useState('landing');
+            const [showAdminLogin, setShowAdminLogin] = useState(false);
+            const [currentTeamFilter, setCurrentTeamFilter] = useState(null);
+
+            useEffect(() => { localStorage.setItem('trainees', JSON.stringify(trainees)); }, [trainees]);
+            useEffect(() => { localStorage.setItem('currentTraineeIndex', currentTraineeIndex.toString()); }, [currentTraineeIndex]);
+            useEffect(() => { localStorage.setItem('gameState', gameState); }, [gameState]);
+            useEffect(() => { localStorage.setItem('votes', JSON.stringify(votes)); }, [votes]);
+            useEffect(() => { localStorage.setItem('manualScores', JSON.stringify(manualScores)); }, [manualScores]);
+            useEffect(() => { localStorage.setItem('completedTraineeIds', JSON.stringify(completedTraineeIds)); }, [completedTraineeIds]);
+            useEffect(() => { if (myId) localStorage.setItem('myId', myId.toString()); }, [myId]);
+
+            useEffect(() => {
+                const channel = new BroadcastChannel('game_sync');
+                channel.onmessage = (event) => {
+                    const { type, data } = event.data;
+                    if (type === 'SYNC_STATE') {
+                        setTrainees(data.trainees);
+                        setCurrentTraineeIndex(data.currentTraineeIndex);
+                        setGameState(data.gameState);
+                        setVotes(data.votes);
+                        setManualScores(data.manualScores);
+                        setCompletedTraineeIds(data.completedTraineeIds);
+                        setCurrentTeamFilter(data.currentTeamFilter);
+                    }
+                };
+                return () => channel.close();
+            }, []);
+
+            const broadcastState = (newState) => {
+                const channel = new BroadcastChannel('game_sync');
+                channel.postMessage({ type: 'SYNC_STATE', data: newState });
+                channel.close();
+            };
+
+            const handleTraineeSubmit = (traineeData, existingId) => {
+                let newTrainees;
+                let newId = myId;
+                if (existingId) {
+                    newId = existingId;
+                    setMyId(existingId);
+                    newTrainees = trainees.map(t => t.id === existingId ? { ...traineeData, id: existingId } : t);
+                    setIsEditing(true);
+                } else if (myId) {
+                    newTrainees = trainees.map(t => t.id === myId ? { ...traineeData, id: myId } : t);
+                    setIsEditing(false);
+                } else {
+                    newId = Date.now();
+                    const newTrainee = { ...traineeData, id: newId };
+                    newTrainees = [...trainees, newTrainee];
+                    setMyId(newId);
+                }
+                setTrainees(newTrainees);
+                broadcastState({ trainees: newTrainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter });
+            };
+
+            const handleVote = (voterId, targetId) => {
+                const currentTarget = trainees[currentTraineeIndex];
+                const isCorrect = currentTarget.id === targetId;
+                const filteredVotes = votes.filter(v => !(v.voterId === voterId && trainees.findIndex(t => t.id === v.targetId) === currentTraineeIndex));
+                
+                let points = 0;
+                if (gameState === 'photo') points = 10;
+                else if (gameState === 'music') points = 5;
+                else if (gameState === 'desc') points = 2;
+
+                const vote = { voterId, targetId: currentTarget.id, isCorrect, timestamp: Date.now(), points: isCorrect ? points : 0 };
+                const updatedVotes = [...filteredVotes, vote];
+                setVotes(updatedVotes);
+                broadcastState({ trainees, currentTraineeIndex, gameState, votes: updatedVotes, manualScores, completedTraineeIds, currentTeamFilter });
+            };
+
+            const handleAddManualScore = (targetId, targetType, score) => {
+                const newScore = { id: Date.now().toString(), targetId, targetType, score, timestamp: Date.now() };
+                const updatedScores = [...manualScores, newScore];
+                setManualScores(updatedScores);
+                broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores: updatedScores, completedTraineeIds, currentTeamFilter });
+            };
+
+            const handleCompleteTrainee = (id) => {
+                const newCompleted = [...completedTraineeIds, id];
+                setCompletedTraineeIds(newCompleted);
+                broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds: newCompleted, currentTeamFilter });
+            };
+
+            const handleSelectMode = (mode) => {
+                if (mode === 'admin') setShowAdminLogin(true);
+                else setViewMode('trainee');
+            };
+
+            if (viewMode === 'landing') {
+                return (
+                    <React.Fragment>
+                        <LandingPage onSelectMode={handleSelectMode} />
+                        <AdminLoginModal isOpen={showAdminLogin} onClose={() => setShowAdminLogin(false)} onLogin={() => { setViewMode('admin'); setShowAdminLogin(false); }} />
+                    </React.Fragment>
+                );
+            }
+
+            if (viewMode === 'admin') {
+                return <AdminDashboard trainees={trainees} currentTraineeIndex={currentTraineeIndex} gameState={gameState} votes={votes} manualScores={manualScores} completedTraineeIds={completedTraineeIds} setGameState={(state) => { setGameState(state); broadcastState({ trainees, currentTraineeIndex, gameState: state, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} setCurrentTraineeIndex={(index) => { setCurrentTraineeIndex(index); broadcastState({ trainees, currentTraineeIndex: index, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} onAddScore={handleAddManualScore} onCompleteTrainee={handleCompleteTrainee} setCurrentTeamFilter={(team) => { setCurrentTeamFilter(team); broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter: team }); }} onExit={() => setViewMode('landing')} />;
+            }
+
+            if ((!myId && !isEditing) || (isEditing && myId)) {
+                const myData = myId ? trainees.find(t => t.id === myId) || null : null;
+                return <TraineeForm trainees={trainees} onSubmit={handleTraineeSubmit} existingData={myData} onCancel={myId ? () => setIsEditing(false) : undefined} onExit={() => setViewMode('landing')} />;
+            }
+
+            return <GameView myId={myId} trainees={trainees} currentTraineeIndex={currentTraineeIndex} gameState={gameState} votes={votes} manualScores={manualScores} currentTeamFilter={currentTeamFilter} onVote={handleVote} onEditProfile={() => setIsEditing(true)} onExit={() => setViewMode('landing')} />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
