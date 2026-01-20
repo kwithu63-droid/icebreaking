@@ -110,6 +110,8 @@
             );
         };
 
+        // --- Modals ---
+
         const AdminLoginModal = ({ isOpen, onClose, onLogin }) => {
             const [password, setPassword] = useState('');
             const [error, setError] = useState(false);
@@ -169,6 +171,38 @@
                 </div>
             );
         };
+
+        const ResetConfirmModal = ({ isOpen, onClose, onConfirm }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center transform transition-all scale-100 border-t-4 border-red-500">
+                        <div className="mb-4 text-red-500 text-5xl">
+                            <i className="fa-solid fa-triangle-exclamation animate-pulse"></i>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">정말 초기화하시겠습니까?</h3>
+                        <p className="text-gray-500 text-sm mb-6">모든 교육생 정보, 투표 기록, 점수가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={onClose}
+                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-bold transition"
+                            >
+                                아니오
+                            </button>
+                            <button
+                                onClick={onConfirm}
+                                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold transition shadow-md"
+                            >
+                                예, 초기화합니다
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Screens ---
 
         const TraineeForm = ({ trainees, onSubmit, existingData, onCancel, onExit }) => {
             const [formData, setFormData] = useState({
@@ -429,12 +463,13 @@
             );
         };
 
-        const AdminDashboard = ({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, setGameState, setCurrentTraineeIndex, onAddScore, onCompleteTrainee, setCurrentTeamFilter, onExit }) => {
+        const AdminDashboard = ({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, setGameState, setCurrentTraineeIndex, onAddScore, onCompleteTrainee, setCurrentTeamFilter, onResetData, onExit }) => {
             const currentTrainee = trainees[currentTraineeIndex];
             const [showQr, setShowQr] = useState(false);
             const [scoreMode, setScoreMode] = useState('none');
             const [viewTab, setViewTab] = useState('quiz');
             const [isPenaltyMode, setIsPenaltyMode] = useState(false);
+            const [showResetModal, setShowResetModal] = useState(false);
             const scoreOptions = Array.from({ length: 10 }, (_, i) => i + 1);
             const teams = Array.from(new Set(trainees.map(t => t.team))).sort();
 
@@ -482,14 +517,19 @@
                     <header className="bg-indigo-600 text-white p-4 shadow-md flex justify-between items-center">
                         <h1 className="text-xl font-bold flex items-center gap-2"><i className="fa-solid fa-user-tie"></i> 관리자 대시보드</h1>
                         <div className="flex gap-2">
+                            <button onClick={() => setShowResetModal(true)} className="px-4 py-2 bg-red-700 hover:bg-red-800 rounded-lg transition text-sm font-bold text-white shadow-md"><i className="fa-solid fa-trash-can mr-2"></i>초기화</button>
                             <button onClick={onExit} className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition text-sm font-bold"><i className="fa-solid fa-house mr-2"></i>종료</button>
                             <button onClick={() => setShowQr(!showQr)} className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition text-sm backdrop-blur-sm"><i className="fa-solid fa-qrcode mr-2"></i>QR 코드</button>
                             <button onClick={() => setScoreMode(scoreMode === 'none' ? 'individual' : 'none')} className={`px-4 py-2 rounded-lg transition text-sm font-bold shadow-sm ${scoreMode !== 'none' ? 'bg-yellow-400 text-indigo-900' : 'bg-indigo-500 hover:bg-indigo-400'}`}><i className="fa-solid fa-star mr-2"></i>점수 관리</button>
                         </div>
                     </header>
+                    
+                    <ResetConfirmModal isOpen={showResetModal} onClose={() => setShowResetModal(false)} onConfirm={() => { onResetData(); setShowResetModal(false); }} />
+
                     <div className="bg-white border-b flex justify-center gap-8 p-2">
                         <button onClick={() => { setViewTab('quiz'); setCurrentTeamFilter(null); }} className={`px-6 py-2 rounded-full font-bold transition ${viewTab === 'quiz' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><i className="fa-solid fa-person-chalkboard mr-2"></i>전체 아이스브레이킹</button>
                         <button onClick={() => setViewTab('team_score')} className={`px-6 py-2 rounded-full font-bold transition ${viewTab === 'team_score' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><i className="fa-solid fa-people-group mr-2"></i>조별 아이스브레이킹</button>
+                        <button onClick={() => setViewTab('list')} className={`px-6 py-2 rounded-full font-bold transition ${viewTab === 'list' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><i className="fa-solid fa-address-book mr-2"></i>명단 관리</button>
                     </div>
                     {showQr && (
                         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowQr(false)}>
@@ -546,7 +586,7 @@
                         </div>
                     )}
                     <main className="flex-1 p-6 flex gap-6 overflow-hidden">
-                        {viewTab === 'quiz' ? (
+                        {viewTab === 'quiz' && (
                             <>
                                 <div className="flex-1 flex flex-col gap-6 overflow-y-auto">
                                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
@@ -623,7 +663,8 @@
                                     </div>
                                 </div>
                             </>
-                        ) : (
+                        )}
+                        {viewTab === 'team_score' && (
                             <div className="w-full flex gap-6">
                                 <div className="flex-1 bg-white rounded-2xl shadow-xl p-8 overflow-y-auto">
                                     <h2 className="text-3xl font-bold text-indigo-800 mb-8 flex items-center justify-center gap-3"><i className="fa-solid fa-people-group text-4xl"></i> 조별 점수 현황</h2>
@@ -674,6 +715,50 @@
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            </div>
+                        )}
+                        {viewTab === 'list' && (
+                            <div className="w-full bg-white rounded-2xl shadow-xl p-8 overflow-y-auto h-full">
+                                <h2 className="text-3xl font-bold text-indigo-800 mb-6 flex items-center justify-center gap-3"><i className="fa-solid fa-address-book text-4xl"></i> 전체 교육생 명단</h2>
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full bg-white border border-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">No</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">이름</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">조</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">사진</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">신청곡</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">특징 1</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">특징 2</th>
+                                                <th className="py-3 px-4 border-b font-bold text-gray-700 text-left">특징 3</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {trainees.map((t, index) => (
+                                                <tr key={t.id} className="hover:bg-gray-50">
+                                                    <td className="py-3 px-4 border-b text-gray-600">{index + 1}</td>
+                                                    <td className="py-3 px-4 border-b font-bold text-gray-800">{t.name}</td>
+                                                    <td className="py-3 px-4 border-b"><span className="bg-indigo-100 text-indigo-800 py-1 px-2 rounded-full text-xs font-bold">{t.team}</span></td>
+                                                    <td className="py-3 px-4 border-b">
+                                                        <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200">
+                                                            <img src={t.photoUrl} alt={t.name} className="w-full h-full object-cover" />
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 border-b text-sm text-blue-600 truncate max-w-xs"><a href={t.youtubeUrl} target="_blank" rel="noopener noreferrer">{t.youtubeUrl}</a></td>
+                                                    <td className="py-3 px-4 border-b text-sm text-gray-600">{t.desc1}</td>
+                                                    <td className="py-3 px-4 border-b text-sm text-gray-600">{t.desc2}</td>
+                                                    <td className="py-3 px-4 border-b text-sm text-gray-600">{t.desc3}</td>
+                                                </tr>
+                                            ))}
+                                            {trainees.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="8" className="py-8 text-center text-gray-400">등록된 교육생이 없습니다.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         )}
@@ -797,6 +882,31 @@
                 broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds: newCompleted, currentTeamFilter });
             };
 
+            const handleResetData = () => {
+                setTrainees([]);
+                setVotes([]);
+                setManualScores([]);
+                setCompletedTraineeIds([]);
+                setCurrentTraineeIndex(0);
+                setGameState('waiting');
+                
+                // Clear localStorage
+                localStorage.removeItem('trainees');
+                localStorage.removeItem('votes');
+                localStorage.removeItem('manualScores');
+                localStorage.removeItem('completedTraineeIds');
+                
+                broadcastState({ 
+                    trainees: [], 
+                    currentTraineeIndex: 0, 
+                    gameState: 'waiting', 
+                    votes: [], 
+                    manualScores: [], 
+                    completedTraineeIds: [], 
+                    currentTeamFilter: null 
+                });
+            };
+
             const handleSelectMode = (mode) => {
                 if (mode === 'admin') setShowAdminLogin(true);
                 else setViewMode('trainee');
@@ -812,7 +922,7 @@
             }
 
             if (viewMode === 'admin') {
-                return <AdminDashboard trainees={trainees} currentTraineeIndex={currentTraineeIndex} gameState={gameState} votes={votes} manualScores={manualScores} completedTraineeIds={completedTraineeIds} setGameState={(state) => { setGameState(state); broadcastState({ trainees, currentTraineeIndex, gameState: state, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} setCurrentTraineeIndex={(index) => { setCurrentTraineeIndex(index); broadcastState({ trainees, currentTraineeIndex: index, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} onAddScore={handleAddManualScore} onCompleteTrainee={handleCompleteTrainee} setCurrentTeamFilter={(team) => { setCurrentTeamFilter(team); broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter: team }); }} onExit={() => setViewMode('landing')} />;
+                return <AdminDashboard trainees={trainees} currentTraineeIndex={currentTraineeIndex} gameState={gameState} votes={votes} manualScores={manualScores} completedTraineeIds={completedTraineeIds} setGameState={(state) => { setGameState(state); broadcastState({ trainees, currentTraineeIndex, gameState: state, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} setCurrentTraineeIndex={(index) => { setCurrentTraineeIndex(index); broadcastState({ trainees, currentTraineeIndex: index, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter }); }} onAddScore={handleAddManualScore} onCompleteTrainee={handleCompleteTrainee} setCurrentTeamFilter={(team) => { setCurrentTeamFilter(team); broadcastState({ trainees, currentTraineeIndex, gameState, votes, manualScores, completedTraineeIds, currentTeamFilter: team }); }} onResetData={handleResetData} onExit={() => setViewMode('landing')} />;
             }
 
             if ((!myId && !isEditing) || (isEditing && myId)) {
